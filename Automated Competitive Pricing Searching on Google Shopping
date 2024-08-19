@@ -1,0 +1,206 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import pandas as pd
+import time
+
+
+all_data = {'ID': [], 'Title': [], 'Provider': [], 'Price': [], 'Delivery': []}
+
+
+def initialize_driver():
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument("--use-fake-ui-for-media-stream")
+    chrome_options.add_experimental_option("prefs", {
+        "profile.managed_default_content_settings.images": 2
+    })
+    driver = webdriver.Chrome(options=chrome_options)
+    return driver
+
+
+def handle_cookie_consent(driver):
+    try:
+        cookie_reject_xpath = '//*[@id="yDmH0d"]/c-wiz/div/div/div/div[2]/div[1]/div[3]/div[1]/div[1]/form[1]/div/div/button/span'
+        cookie_reject_button = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, cookie_reject_xpath))
+        )
+        cookie_reject_button.click()
+    except Exception as e:
+        print(f"Error handling cookie consent: {e}")
+
+
+def search_and_compare(driver, keyword):
+    try:
+        driver.get("https://shopping.google.com/")
+        time.sleep(1)  # Ensure the page loads completely
+        
+       
+        name_input = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, '//*[@id="REsRA"]')))
+        name_input.send_keys(keyword + Keys.ENTER)
+        time.sleep(2)  # Give time for results to load
+        
+       
+        compare_xpath_list = [
+            '//*[@id="rso"]//div[contains(@class, "sh-dlr__list-result")]//div[contains(@class, "sh-dlr__list-result-sec")]//a/span[1]/span',
+            '/html/body/div[6]/div/div[4]/div[3]/div/div[3]/div[2]/div[3]/div/div[2]/div/div/div[2]/div/div/div[1]/div[2]/div[4]/div[2]/a/span[1]/span',
+        ]
+
+        compare_xpath_found = False
+
+        for compare_xpath in compare_xpath_list:
+            try:
+                compare_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, compare_xpath))
+                )
+                compare_button.click()
+                compare_xpath_found = True
+                break
+            except Exception as e:
+                continue
+        
+        return compare_xpath_found
+    except Exception as e:
+        print(f"Error searching and comparing: {e}")
+        return False
+
+
+def extract_product_details(driver, Number):
+    try:
+        STORE = []
+        PRICE = []
+        delivery = []
+        product_names = []
+
+        for i in range(1, int(Number) + 1):
+            xpath_store = '//*[@id="sh-osd__online-sellers-cont"]/tr[{}]/td[1]/div[1]/a'.format(i)
+            xpath_price = '//*[@id="sh-osd__online-sellers-cont"]/tr[{}]/td[4]/span'.format(i)
+            xpath_delivery = '//*[@id="sh-osd__online-sellers-cont"]/tr[{}]/td[2]/div[1]'.format(i)
+
+            try:
+                store = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath_store))).text
+                price = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath_price))).text
+                deliv = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath_delivery))).text
+            except Exception as e:
+                store = ''
+                price = ''
+                deliv = ''
+
+            STORE.append(store)
+            PRICE.append(price)
+            delivery.append(deliv)
+
+        return STORE, PRICE, delivery
+    except Exception as e:
+        print(f"Error extracting product details: {e}")
+        return [], [], []
+
+# Function to handle the main script execution
+def run_script_with_keyword(keyword, Number, Numm):
+    global all_data
+    driver = initialize_driver()
+
+    try:
+        handle_cookie_consent(driver)
+
+        if search_and_compare(driver, keyword):
+            product_name = ''
+            STORE, PRICE, delivery = extract_product_details(driver, Number)
+            if STORE and PRICE and delivery:
+                product_name = driver.title.split(' - ')[0]
+            else:
+                product_name = keyword
+        else:
+            print('No best match found')
+            product_name = keyword
+
+            STORE = []
+            PRICE = []
+
+            names_list = []
+            for i in range(1, int(Number) + 1):
+                xpath = '//*[@id="rso"]/div[2]/div[2]/div/div[{}]/div[1]/div[2]/div[2]/span/div[1]/div/a[1]'.format(i)
+                try:
+                    element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                    names_list.append(element.text)
+                except Exception as e:
+                    break
+
+            for x in names_list:
+                price, *_, store_name = x.split('\n')
+                STORE.append(store_name)
+                PRICE.append(price)
+
+            delivery = []
+            product_names = []
+
+            for i in range(1, int(Number) + 1):
+                xpath = '//*[@id="rso"]/div[2]/div[2]/div/div[{}]/div[1]/div[2]/div[2]/span/div[1]/div/a[2]'.format(i)
+                try:
+                    element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                    delivery_text = element.text.split('\n')[0]
+                    delivery.append(delivery_text)
+                except Exception as e:
+                    break
+
+            for i in range(1, int(Number) + 1):
+                xpath = '//*[@id="rso"]/div[2]/div[2]/div/div[{}]/div[1]/div[2]/span/a/div[1]/h3'.format(i)
+                try:
+                    element = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, xpath)))
+                    name_text = element.text.split('\n')[0]
+                    if name_text == '':
+                        name_text = 'name error'
+                    product_names.append(name_text)
+                except Exception as e:
+                    break
+
+        driver.quit()
+
+        if product_name:
+            data = {'ID': [Numm] * len(STORE), 'Title': [product_name] * len(STORE), 'Provider': STORE, 'Price': PRICE, 'Delivery': delivery}
+        else:
+            data = {'ID': [Numm] * len(STORE), 'Title': product_names, 'Provider': STORE, 'Price': PRICE, 'Delivery': delivery}
+
+        df = pd.DataFrame(data)
+        all_data['ID'].extend(df['ID'])
+        all_data['Title'].extend(df['Title'])
+        all_data['Provider'].extend(df['Provider'])
+        all_data['Price'].extend(df['Price'])
+        all_data['Delivery'].extend(df['Delivery'])
+
+        print(f"{Numm} completed!")
+
+    except Exception as e:
+        print(f"Error running script for {Numm}: {e}")
+
+
+def upload_file():
+    file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+    if file_path:
+        try:
+            df = pd.read_excel(file_path)
+            for index, row in df.iterrows():
+                Numm = row['ID']
+                keyword = row['Product Name']
+                Number = row['Number']
+                run_script_with_keyword(keyword, Number, Numm)
+
+            df_all = pd.DataFrame(all_data)
+            df_all.to_csv('CompetitorPrice.csv', index=False, encoding='utf-8-sig')
+            messagebox.showinfo("Complete", "Script execution completed and data exported successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred while processing the file: {e}")
+
+# Create the main Tkinter window
+root = tk.Tk()
+root.title("Competitor Price Searching")
+
+# Create a button to upload file
+button_upload = ttk.Button(root, text="Upload Excel File", command=upload_file)
+button_upload.pack(pady=5)
+
+# Run the Tkinter event loop
+root.mainloop()
